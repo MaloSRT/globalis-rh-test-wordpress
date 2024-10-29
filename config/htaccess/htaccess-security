@@ -144,3 +144,6 @@
   RewriteRule ^(.*)$ - [F]
 </IfModule>
 
+# Bloquer l'accès aux registrations
+RedirectMatch 404 ^<##WEB_PATH##>/registrations/.*$
+
