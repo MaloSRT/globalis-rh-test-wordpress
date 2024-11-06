@@ -1,7 +1,15 @@
 <?php
 
+use OpenSpout\Common\Entity\Cell;
+use OpenSpout\Common\Entity\Row;
+
 add_action('init', __NAMESPACE__ . '\\register_post_type_event', 10);
 add_action('init', __NAMESPACE__ . '\\register_post_type_registration', 10);
+
+if ($_SERVER['REQUEST_METHOD'] == "GET" && isset($_GET['event_export']) && ctype_digit($_GET['event_export']))
+{
+    event_export((int)$_GET['event_export']);
+}
 
 function register_post_type_event()
 {
@@ -46,9 +54,13 @@ function register_post_type_event()
             'registrations' => ['title' => 'Registrations', 'sortable' => false, 'function' => function () {
                 global $post;
                 global $wpdb;
-                $sql_query = $wpdb->prepare("SELECT COUNT(`post_id`) as count FROM %i WHERE `meta_key` = 'registration_event_id' AND `meta_value` = %d", $wpdb->postmeta, $post_id);
+                $sql_query = $wpdb->prepare("SELECT COUNT(`post_id`) as count FROM %i WHERE `meta_key` = 'registration_event_id' AND `meta_value` = %d", $wpdb->postmeta, $post->ID);
                 $result = $wpdb->get_row($sql_query, ARRAY_A);
                 echo $result['count'];
+            }],
+            'export' => ['title' => 'Export', 'sortable' => false, 'function' => function () {
+                global $post;
+                echo '<button type="submit" name="event_export" value="' . $post->ID . '" class="button">Export</button>';
             }],
         ],
         'admin_filters'        => [],
@@ -120,4 +132,48 @@ function register_post_type_registration()
     ];
 
     register_extended_post_type("registrations", $args, $names);
+}
+
+# Export Excel
+function event_export($id) {
+    global $wpdb;
+    $sql_query = $wpdb->prepare(
+        "SELECT 
+            last_name.meta_value AS last_name,
+            first_name.meta_value AS first_name,
+            email.meta_value AS email,
+            phone.meta_value AS phone
+        FROM 
+            %i AS postmeta
+        JOIN 
+            %i AS last_name 
+            ON postmeta.post_id = last_name.post_id AND last_name.meta_key = 'registration_last_name'
+        JOIN 
+            %i AS first_name 
+            ON postmeta.post_id = first_name.post_id AND first_name.meta_key = 'registration_first_name'
+        JOIN 
+            %i AS email 
+            ON postmeta.post_id = email.post_id AND email.meta_key = 'registration_email'
+        LEFT JOIN 
+            %i AS phone 
+            ON postmeta.post_id = phone.post_id AND phone.meta_key = 'registration_phone'
+        WHERE 
+            postmeta.meta_key = 'registration_event_id' 
+            AND postmeta.meta_value = %d;", $wpdb->postmeta, $wpdb->postmeta, $wpdb->postmeta, $wpdb->postmeta, $wpdb->postmeta, $id);
+    $results = $wpdb->get_results($sql_query);
+
+    $writer = new \OpenSpout\Writer\XLSX\Writer();
+    $writer->openToBrowser('event_export_' . $id . '.xlsx');
+
+    $writer->addRow(Row::fromValues(['Last name', 'First name', 'Email', 'Phone']));
+    foreach ($results as $registration) {
+        $writer->addRow(Row::fromValues([
+            $registration->last_name,
+            $registration->first_name,
+            $registration->email,
+            $registration->phone
+        ]));
+    }
+    $writer->close();
+    exit;
 }
